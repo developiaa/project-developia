@@ -1,1 +1,3 @@
-rootProject.name = 'dev'
+rootProject.name = 'project-developia'
+
+include ("pro-01-circuitbreaker")

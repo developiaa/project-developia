@@ -1,0 +1,21 @@
+resilience4j:
+  circuitbreaker:
+    instances:
+      externalApiService:
+        register-health-indicator: true
+        failure-rate-threshold: 50
+        minimum-number-of-calls: 10
+        sliding-window-type: COUNT_BASED # COUNT_BASED, TIME_BASED
+        sliding-window-size: 10
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        slow-call-rate-threshold: 100
+        slow-call-duration-threshold: 5s
+
+management:
+  endpoint:
+    health:
+      show-details: always
+  health:
+    circuitbreakers:
+      enabled: true

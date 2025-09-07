@@ -6,6 +6,8 @@ plugins {
 
 ext {
     javaVersion = '21'
+    springBootVersion = '3.5.5'
+    springCloudVersion = '2025.0.0'
 }
 
 allprojects {
@@ -32,10 +34,12 @@ subprojects {
     test {
         useJUnitPlatform()
     }
-}
 
-dependencyManagement {
-    imports {
-        mavenBom "org.springframework.boot:spring-boot-dependencies:${rootProject.ext.springBootVersion}"
+    // dependencyManagement 블록을 이곳으로 이동
+    dependencyManagement {
+        imports {
+            mavenBom "org.springframework.boot:spring-boot-dependencies:${rootProject.ext.springBootVersion}"
+            mavenBom "org.springframework.cloud:spring-cloud-dependencies:${rootProject.ext.springCloudVersion}"
+        }
     }
 }

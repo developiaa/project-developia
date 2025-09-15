@@ -15,6 +15,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
 import java.io.IOException;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -102,7 +103,6 @@ class ExternalApiServiceTest {
         String fallbackResult = externalApiService.callExternalApi();
         assertThat(fallbackResult).contains("fallback");
 
-        // 요청이 들어오지 않았음을 확인
         assertThat(mockWebServer.getRequestCount()).isEqualTo(initialRequestCount + 10);
     }
 
@@ -137,7 +137,6 @@ class ExternalApiServiceTest {
         String fallbackResult = externalApiService.callExternalApi();
         assertThat(fallbackResult).contains("fallback");
 
-        // 요청이 들어오지 않았음을 확인
         assertThat(mockWebServer.getRequestCount()).isEqualTo(initialRequestCount + 10);
     }
 
@@ -172,7 +171,6 @@ class ExternalApiServiceTest {
         String fallbackResult = externalApiService.callExternalApi();
         assertThat(fallbackResult).contains("SHOULD_BE_CALLED");
 
-        // 요청이 들어오지 않았음을 확인
         assertThat(mockWebServer.getRequestCount()).isEqualTo(initialRequestCount + 11);
     }
 
@@ -252,5 +250,61 @@ class ExternalApiServiceTest {
         externalApiService.callExternalApi();
         assertThat(getServiceState())
                 .isEqualTo(CircuitBreaker.State.OPEN);
+    }
+
+    @DisplayName("""
+            slow call로 인한 서킷 OPEN
+            slow-call-rate-threshold: 50
+            slow-call-duration-threshold: 1000ms
+            """)
+    @Test
+    void test7() {
+        // given: 1초가 넘는 느린 응답 6개와 빠른 응답 4개를 설정
+        int initialRequestCount = mockWebServer.getRequestCount();
+
+
+        // 지연되는 느린 성공 응답 6개
+        for (int i = 0; i < 6; i++) {
+            mockWebServer.enqueue(new MockResponse()
+                    .setResponseCode(HttpStatus.OK.value())
+                    /*
+                     *  setBody 부분이 없으면 실패함. setBodyDelay는 본문을 보내기전에 지연시키는 기능인데
+                     *  보낼 본문 자체가 없으므로 지연 로직을 제대로 실행하지 않거나 무시하여 응답을 바로 종료
+                     *  -> 느린 호출로 취급하지 않고 정상적인 호출로 처리됨
+                     */
+                    .setBody("RequiredField")
+                    .setBodyDelay(1001, TimeUnit.MILLISECONDS));
+        }
+        // 지연 없는 빠른 성공 응답 4개
+        for (int i = 0; i < 4; i++) {
+            mockWebServer.enqueue(new MockResponse()
+                    .setResponseCode(HttpStatus.OK.value()));
+        }
+
+        // when minimum-number-of-calls: 10
+        for (int i = 0; i < 10; i++) {
+            externalApiService.callExternalApi();
+        }
+
+        CircuitBreaker circuitBreaker = circuitBreakerRegistry.circuitBreaker("externalApiService");
+        CircuitBreaker.Metrics metrics = circuitBreaker.getMetrics();
+
+        log.info("Number of Slow Calls: {}", metrics.getNumberOfSlowCalls());
+        log.info("Number of Slow Successful Calls: {}", metrics.getNumberOfSlowSuccessfulCalls());
+        log.info("Number of Successful Calls: {}", metrics.getNumberOfSuccessfulCalls());
+        log.info("Number of Failed Calls: {}", metrics.getNumberOfFailedCalls());
+        log.info("Slow Call Rate (%): {}", metrics.getSlowCallRate());
+        log.info("Failure Rate (%): {}", metrics.getFailureRate());
+
+        // then
+        CircuitBreaker.State state = getServiceState();
+        assertThat(state).isEqualTo(CircuitBreaker.State.OPEN);
+        assertThat(metrics.getSlowCallRate()).isEqualTo(60.0f);
+
+        // 이후의 호출은 Fallback을 실행
+        String fallbackResult = externalApiService.callExternalApi();
+        assertThat(fallbackResult).contains("fallback");
+
+        assertThat(mockWebServer.getRequestCount()).isEqualTo(initialRequestCount + 10);
     }
 }

@@ -11,7 +11,8 @@ resilience4j:
         permitted-number-of-calls-in-half-open-state: 3
         slow-call-rate-threshold: 50
         slow-call-duration-threshold: 1000ms
-
+        record-exceptions: # 어떤 종류의 에러를 서킷브레이커에서 실패로 기록할지에 대한 값
+          - org.springframework.web.client.HttpServerErrorException
 management:
   endpoint:
     health:

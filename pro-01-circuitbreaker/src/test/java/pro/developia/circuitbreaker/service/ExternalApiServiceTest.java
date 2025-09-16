@@ -70,10 +70,6 @@ class ExternalApiServiceTest {
         assertThat(state).isEqualTo(CircuitBreaker.State.CLOSED);
     }
 
-    private CircuitBreaker.State getServiceState() {
-        return circuitBreakerRegistry.circuitBreaker("externalApiService").getState();
-    }
-
     @DisplayName("""
             임계점을 넘어서 요청이 실패한 경우 서킷 OPEN
             minimum-number-of-calls=10
@@ -286,8 +282,7 @@ class ExternalApiServiceTest {
             externalApiService.callExternalApi();
         }
 
-        CircuitBreaker circuitBreaker = circuitBreakerRegistry.circuitBreaker("externalApiService");
-        CircuitBreaker.Metrics metrics = circuitBreaker.getMetrics();
+        CircuitBreaker.Metrics metrics = getCircuitBreaker().getMetrics();
 
         log.info("Number of Slow Calls: {}", metrics.getNumberOfSlowCalls());
         log.info("Number of Slow Successful Calls: {}", metrics.getNumberOfSlowSuccessfulCalls());
@@ -306,5 +301,60 @@ class ExternalApiServiceTest {
         assertThat(fallbackResult).contains("fallback");
 
         assertThat(mockWebServer.getRequestCount()).isEqualTo(initialRequestCount + 10);
+    }
+
+
+    @DisplayName("4xx 에러 발생 시 실패로 기록 x")
+    @Test
+    void test8() {
+        // given
+        int initialRequestCount = mockWebServer.getRequestCount();
+        for (int i = 0; i < 10; i++) {
+            mockWebServer.enqueue(new MockResponse()
+                    .setResponseCode(HttpStatus.NOT_FOUND.value())
+                    .setBody("Not Found"));
+        }
+
+        // when
+        for (int i = 0; i < 10; i++) {
+            String result = externalApiService.callExternalApi();
+            assertThat(result).contains("fallback");
+        }
+
+        CircuitBreaker.Metrics metrics = getCircuitBreaker().getMetrics();
+        assertThat(metrics.getNumberOfFailedCalls()).isZero();
+        assertThat(getServiceState()).isEqualTo(CircuitBreaker.State.CLOSED);
+        assertThat(mockWebServer.getRequestCount()).isEqualTo(initialRequestCount + 10);
+    }
+
+    @DisplayName("5xx 에러 발생 시 실패로 기록 o, 서킷 OPEN")
+    @Test
+    void test9() {
+        // given
+        int initialRequestCount = mockWebServer.getRequestCount();
+        for (int i = 0; i < 10; i++) {
+            mockWebServer.enqueue(new MockResponse()
+                    .setResponseCode(HttpStatus.INTERNAL_SERVER_ERROR.value())
+                    .setBody("Internal Server Error"));
+        }
+
+        // when
+        for (int i = 0; i < 10; i++) {
+            String result = externalApiService.callExternalApi();
+            assertThat(result).contains("fallback");
+        }
+
+        CircuitBreaker.Metrics metrics = getCircuitBreaker().getMetrics();
+        assertThat(metrics.getNumberOfFailedCalls()).isEqualTo(10);
+        assertThat(getServiceState()).isEqualTo(CircuitBreaker.State.OPEN);
+        assertThat(mockWebServer.getRequestCount()).isEqualTo(initialRequestCount + 10);
+    }
+
+    private CircuitBreaker getCircuitBreaker() {
+        return circuitBreakerRegistry.circuitBreaker("externalApiService");
+    }
+
+    private CircuitBreaker.State getServiceState() {
+        return getCircuitBreaker().getState();
     }
 }

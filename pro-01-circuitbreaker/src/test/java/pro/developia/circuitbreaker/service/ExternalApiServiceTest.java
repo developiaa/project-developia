@@ -304,7 +304,7 @@ class ExternalApiServiceTest {
     }
 
 
-    @DisplayName("4xx 에러 발생 시 실패로 기록 x")
+    @DisplayName("4xx 에러는 실패로 기록되지 않는다")
     @Test
     void test8() {
         // given

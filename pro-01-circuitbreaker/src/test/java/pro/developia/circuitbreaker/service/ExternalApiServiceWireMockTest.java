@@ -156,6 +156,160 @@ class ExternalApiServiceWireMockTest {
         verify(10, getRequestedFor(urlEqualTo("/api/data")));
     }
 
+    @DisplayName("""
+            서킷 OPEN -> HALF_OPEN -> CLOSED
+            wait-duration-in-open-state: 10s
+            permitted-number-of-calls-in-half-open-state: 3
+            failure-rate-threshold: 50
+            """)
+    @Test
+    void test5() throws InterruptedException {
+        // given
+        String scenarioName = "scenario";
+        stubFor(get("/api/data")
+                .inScenario(scenarioName)
+                .willReturn(aResponse()
+                        .withStatus(HttpStatus.INTERNAL_SERVER_ERROR.value())));
+
+        for (int i = 0; i < 10; i++) {
+            externalApiService.callExternalApi();
+        }
+
+        stubFor(get("/api/data")
+                .inScenario(scenarioName)
+                .willReturn(aResponse()
+                        .withStatus(HttpStatus.OK.value())));
+
+        log.info("=== wait-duration-in-open-state 10초 대기 ===");
+        Thread.sleep(10 * 1000);
+
+        externalApiService.callExternalApi();
+        assertThat(getServiceState())
+                .isEqualTo(CircuitBreaker.State.HALF_OPEN);
+
+        externalApiService.callExternalApi();
+        assertThat(getServiceState())
+                .isEqualTo(CircuitBreaker.State.HALF_OPEN);
+
+        externalApiService.callExternalApi();
+        assertThat(getServiceState())
+                .isEqualTo(CircuitBreaker.State.CLOSED);
+    }
+
+    @DisplayName("""
+            서킷 OPEN -> HALF_OPEN -> OPEN
+            wait-duration-in-open-state: 10s
+            permitted-number-of-calls-in-half-open-state: 3
+            failure-rate-threshold: 50
+            """)
+    @Test
+    void test6() throws InterruptedException {
+        // given
+        stubFor(get("/api/data")
+                .willReturn(aResponse()
+                        .withStatus(HttpStatus.INTERNAL_SERVER_ERROR.value())));
+
+        for (int i = 0; i < 10; i++) {
+            externalApiService.callExternalApi();
+        }
+
+        String scenarioName = "scenario";
+        stubFor(get("/api/data")
+                .inScenario(scenarioName)
+                .whenScenarioStateIs(Scenario.STARTED)
+                .willReturn(aResponse().withStatus(HttpStatus.INTERNAL_SERVER_ERROR.value()))
+                .willSetStateTo("Second_Trial"));
+
+        stubFor(get("/api/data")
+                .inScenario(scenarioName)
+                .whenScenarioStateIs("Second_Trial")
+                .willReturn(aResponse().withStatus(HttpStatus.INTERNAL_SERVER_ERROR.value()))
+                .willSetStateTo("Third_Trial"));
+
+        stubFor(get("/api/data")
+                .inScenario(scenarioName)
+                .whenScenarioStateIs("Third_Trial")
+                .willReturn(aResponse().withStatus(HttpStatus.OK.value())));
+
+
+        log.info("=== wait-duration-in-open-state 10초 대기 ===");
+        Thread.sleep(10 * 1000 + 500); // 10.5초 버퍼
+
+        // then
+        // 1. 첫 번째 시험 요청 (실패) -> 아직 3개를 다 채우지 않았으므로 HALF_OPEN 유지
+        externalApiService.callExternalApi();
+        assertThat(getServiceState()).isEqualTo(CircuitBreaker.State.HALF_OPEN);
+
+        // 2. 두 번째 시험 요청 (실패) -> 아직 3개를 다 채우지 않았으므로 HALF_OPEN 유지
+        externalApiService.callExternalApi();
+        assertThat(getServiceState()).isEqualTo(CircuitBreaker.State.HALF_OPEN);
+
+        // 3. 세 번째 시험 요청 (성공) -> 3개를 모두 채웠으므로 최종 판정
+        // 최종 판정: 3번 중 2번 실패 (실패율 66.7%) -> 50% 임계치를 넘었으므로 OPEN으로 전환
+        externalApiService.callExternalApi();
+        assertThat(getServiceState()).isEqualTo(CircuitBreaker.State.OPEN);
+    }
+
+
+    @DisplayName("""
+            slow call로 인한 서킷 OPEN
+            slow-call-rate-threshold: 50
+            slow-call-duration-threshold: 1000ms
+            """)
+    @Test
+    void test7() {
+        stubFor(get("/api/data")
+                .willReturn(aResponse()
+                        .withStatus(HttpStatus.OK.value())
+                        .withBody("SLOW_SUCCESS")
+                        .withFixedDelay(1001)));
+
+        for (int i = 0; i < 10; i++) {
+            externalApiService.callExternalApi();
+        }
+
+        CircuitBreaker.Metrics metrics = getCircuitBreaker().getMetrics();
+        assertThat(metrics.getSlowCallRate()).isEqualTo(100.0f);
+        assertThat(getServiceState()).isEqualTo(CircuitBreaker.State.OPEN);
+        verify(10, getRequestedFor(urlEqualTo("/api/data")));
+    }
+
+    @DisplayName("4xx 에러는 실패로 기록되지 않는다")
+    @Test
+    void test8() {
+        stubFor(get("/api/data")
+                .willReturn(aResponse()
+                        .withStatus(HttpStatus.NOT_FOUND.value())
+                        .withBody("Not Found")));
+
+        for (int i = 0; i < 10; i++) {
+            String result = externalApiService.callExternalApi();
+            assertThat(result).contains("fallback");
+        }
+
+        assertThat(getCircuitBreaker().getMetrics().getNumberOfFailedCalls()).isZero();
+        assertThat(getServiceState()).isEqualTo(CircuitBreaker.State.CLOSED);
+        verify(10, getRequestedFor(urlEqualTo("/api/data")));
+    }
+
+    @DisplayName("5xx 에러 발생 시 실패로 기록 o, 서킷 OPEN")
+    @Test
+    void test9() {
+        stubFor(get("/api/data")
+                .willReturn(aResponse()
+                        .withStatus(HttpStatus.INTERNAL_SERVER_ERROR.value())
+                        .withBody("Internal Server Error")));
+
+        for (int i = 0; i < 10; i++) {
+            String result = externalApiService.callExternalApi();
+            assertThat(result).contains("fallback");
+        }
+
+        assertThat(getCircuitBreaker().getMetrics().getNumberOfFailedCalls()).isEqualTo(10);
+        assertThat(getServiceState()).isEqualTo(CircuitBreaker.State.OPEN);
+        verify(10, getRequestedFor(urlEqualTo("/api/data")));
+    }
+
     private CircuitBreaker getCircuitBreaker() {
         return circuitBreakerRegistry.circuitBreaker("externalApiService");
     }

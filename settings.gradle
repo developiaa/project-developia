@@ -1,3 +1,4 @@
 rootProject.name = 'project-developia'
 
 include ("pro-01-circuitbreaker")
+include ("pro-02-cache")

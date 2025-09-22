@@ -1,0 +1,16 @@
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation("org.springframework.boot:spring-boot-starter-cache")
+
+    // Redis
+    implementation("org.springframework.boot:spring-boot-starter-data-redis")
+
+    // Ehcache
+    implementation("javax.cache:cache-api")
+    implementation("org.ehcache:ehcache:3.10.8")
+
+    // Caffeine
+    implementation("com.github.ben-manes.caffeine:caffeine:3.1.8")
+}
+
+tasks.register("prepareKotlinBuildScriptModel"){}

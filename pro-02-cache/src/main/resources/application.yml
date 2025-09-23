@@ -1,0 +1,35 @@
+# Redis
+spring:
+  config:
+    activate:
+      on-profile: "redis"
+  cache:
+    type: redis
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  profiles:
+    active: redis
+
+---
+# Ehcache
+spring:
+  config:
+    activate:
+      on-profile: "ehcache"
+  cache:
+    type: jcache
+
+---
+# Caffeine
+spring:
+  config:
+    activate:
+      on-profile: "caffeine"
+  cache:
+    type: caffeine # Spring Boot? CaffeineCacheManager? ?? ??
+    cache-names:
+      - products
+    caffeine:
+      spec: maximumSize=500,expireAfterAccess=30s # ?? ?? ??

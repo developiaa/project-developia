@@ -15,12 +15,13 @@ public class EhcacheConfig implements JCacheManagerCustomizer {
 
     @Override
     public void customize(CacheManager cacheManager) {
-        MutableConfiguration<Long, pro.developia.cache.product.Product> configuration =
-                new MutableConfiguration<Long, pro.developia.cache.product.Product>()
-                        .setTypes(Long.class, pro.developia.cache.product.Product.class)
-                        .setStoreByValue(false)
-                        .setExpiryPolicyFactory(CreatedExpiryPolicy.factoryOf(Duration.TEN_MINUTES));
+        cacheManager.createCache("products", buildCacheConfiguration(Duration.TEN_MINUTES));
+    }
 
-        cacheManager.createCache("products", configuration);
+    private MutableConfiguration<Long, Object> buildCacheConfiguration(Duration ttl) {
+        return new MutableConfiguration<Long, Object>()
+                .setTypes(Long.class, Object.class)
+                .setStoreByValue(false)
+                .setExpiryPolicyFactory(CreatedExpiryPolicy.factoryOf(ttl));
     }
 }
